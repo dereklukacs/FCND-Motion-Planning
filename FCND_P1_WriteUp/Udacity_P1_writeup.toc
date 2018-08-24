@@ -1,0 +1,16 @@
+\contentsline {section}{\numberline {1}Explaining the starter code}{1}
+\contentsline {section}{\numberline {2}Meeting Requirements with Implementation}{1}
+\contentsline {subsection}{\numberline {2.1}Parsing the colliders.csv file}{1}
+\contentsline {subsection}{\numberline {2.2}Converting to local position}{2}
+\contentsline {subsection}{\numberline {2.3}Set start point to local position}{2}
+\contentsline {subsection}{\numberline {2.4}Setting Goal Position with Latitude and Longitude}{2}
+\contentsline {subsection}{\numberline {2.5}Expanding A* to accept diagonal moves}{2}
+\contentsline {subsection}{\numberline {2.6}Path Pruning}{3}
+\contentsline {section}{\numberline {3}Future Improvements}{4}
+\contentsline {subsection}{\numberline {3.1}Graph Based Search}{4}
+\contentsline {subsection}{\numberline {3.2}3D A star Search}{4}
+\contentsline {subsection}{\numberline {3.3}Misc}{5}
+\contentsline {section}{Appendices}{6}
+\contentsline {section}{\numberline {A}planning utils.py}{6}
+\contentsline {section}{\numberline {B}motion planning.py}{10}
+\contentsline {section}{\numberline {C}Summary of Section}{14}

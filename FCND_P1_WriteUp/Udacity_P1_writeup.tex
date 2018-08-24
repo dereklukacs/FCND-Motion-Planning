@@ -1,0 +1,818 @@
+\documentclass[10pt]{article}
+\usepackage[left=1in,right=1in,top=1in,bottom=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{pdfpages}
+
+\usepackage[toc,page]{appendix}  %allows for creation of appendixes
+
+ 
+\usepackage{listings}
+\usepackage{color}
+ 
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+ 
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+ 
+\lstset{style=mystyle}
+
+\begin{document}
+\begin{titlepage}
+	\centering
+	\includegraphics[width=0.8\textwidth]{motionPlanningImage}\par
+    \vspace{4.0cm}
+	{\scshape\LARGE Write Up: \\Udacity Project 1 Motion Planning
+ \par}
+ \vspace{2.0cm}
+ Derek Lukacs\\
+ \today
+	\vfill
+
+% Bottom of the page
+\newpage	
+\tableofcontents
+	
+	
+\end{titlepage}
+\section{Explaining the starter code}
+The starter code is broken into two main pieces:
+\begin{itemize}
+\item planning\texttt{\_}utils.py with helpful functions
+\item motion\texttt{\_}planning.py that inherits from Drone
+\end{itemize}
+
+\noindent \textbf{planning utils} defines several helpful functions including:
+\begin{itemize}
+\itemsep0em
+\item create\texttt{\_}grid: returns a grid representation of the 2D configuration space
+\item Action: an enum which defines actions and there associated cost
+\item Valid\texttt{\_}actions: which defines which actions can take place given the current node and grid
+\item a\texttt{\_}star: an implementation of the a-star search algorithm for a 2 dimensional problem.
+\item heuristic: this defines the a star algorithm search heuristic, in this case we are using the euclidean distance to the goal.
+\end{itemize}
+\textbf{motion\texttt{\_}planning.py } is a class to work with the FCND simulator for this project. It is broken down into the following key sections
+\begin{itemize}
+\item Callback functions: These handle what should be done when state variables are changed. Most actions are based on the current state. 
+\item Transition functions: These functions handle the handoff from one state to the next within the finite state machine.
+\item Helper functions: these functions serve to facilitate the other activities of the callback, transition, and start functions.
+\item Path Planning: The planpath() function is given with several TODO's which are the main goal of this project. 
+\end{itemize}
+
+\section{Meeting Requirements with Implementation}
+In this section I will outline and demonstrate how my project meets the project rubric.
+\subsection{Parsing the colliders.csv file}
+
+The following code meets the spec for reading information from colliders.csv and saving it to the proper state variables. This function is called at the beginning of the plan\texttt{\_}path() function.\\
+
+\noindent From within the $motion\_planning.py$ file
+
+\begin{lstlisting}[language=Python]
+def read_in(self):
+        # read lat0, lon0 from colliders into floating point values
+        # read in whole file and take out first line as "row1"
+        csvfile = open('colliders.csv', newline='')
+        colliders = csv.reader(csvfile, delimiter=',')
+        row1 = next(colliders)
+
+        # parse strings to get numbers
+        lat_0 = float(row1[0][5:])
+        lon_0 = float(row1[1][6:])
+        # set home position to (lon0, lat0, 0)
+        self.set_home_position(lon_0, lat_0, 0)
+
+        # Read in obstacle map
+        self.data = np.loadtxt('colliders.csv', delimiter=',',
+                               dtype='Float64', skiprows=2)
+\end{lstlisting}
+
+\subsection{Converting to local position}
+From within the $motion\_planning.py$ file
+
+\begin{lstlisting}[language=Python]
+        # convert to current local position using global_to_local()
+        local_pos = global_to_local(self.global_position, self.global_home)
+\end{lstlisting}
+
+\subsection{Set start point to local position}
+From within the $motion\_planning.py$ file
+
+\begin{lstlisting}[language=Python]
+        # Define starting point on the grid (this is just grid center)
+        grid_start = (-north_offset, -east_offset)
+
+        # convert start position to current position rather than map center
+        grid_start =  (int(local_pos[0]) + grid_start[0], int(local_pos[1]) + grid_start[1])
+\end{lstlisting}
+\subsection{Setting Goal Position with Latitude and Longitude}
+
+From within the $motion\_planning.py$ file
+
+\begin{lstlisting}[language=Python]
+        # Set goal as lat lon and convert to local coordinates (from bottom left)
+        grid_goal_global = (-122.397450,37.79380,0)
+        grid_goal = global_to_local(grid_goal_global, self.global_home)
+        grid_goal = (int(grid_goal[0]) - north_offset,  int(grid_goal[1]) - east_offset)
+\end{lstlisting}
+
+\subsection{Expanding A* to accept diagonal moves}
+
+From within the $planning\_utils.py$ file
+\begin{lstlisting}[language=Python]
+# Assume all actions cost the same.
+class Action(Enum):
+    """
+    An action is represented by a 3 element tuple.
+
+    The first 2 values are the delta of the action relative
+    to the current grid position. The third and final value
+    is the cost of performing the action.
+    """
+
+    WEST = (0, -1, 1)
+    EAST = (0, 1, 1)
+    NORTH = (-1, 0, 1)
+    SOUTH = (1, 0, 1)
+    NE = (1, 1, 2**(.5))
+    SE = (1, -1, 2**(.5))
+    NW = (-1, 1, 2**(.5))
+    SW = (-1, -1, 2**(.5))
+
+    @property
+    def cost(self):
+        return self.value[2]
+
+    @property
+    def delta(self):
+        return (self.value[0], self.value[1])
+
+
+def valid_actions(grid, current_node):
+    """
+    Returns a list of valid actions given a grid and current node.
+    """
+    valid_actions = list(Action)
+    n, m = grid.shape[0] - 1, grid.shape[1] - 1
+    x, y = current_node
+
+    # check if the node is off the grid or
+    # it's an obstacle
+
+    if x - 1 < 0 or grid[x - 1, y] == 1:
+        valid_actions.remove(Action.NORTH)
+    if x + 1 > n or grid[x + 1, y] == 1:
+        valid_actions.remove(Action.SOUTH)
+    if y - 1 < 0 or grid[x, y - 1] == 1:
+        valid_actions.remove(Action.WEST)
+    if y + 1 > m or grid[x, y + 1] == 1:
+        valid_actions.remove(Action.EAST)
+    if x - 1 < 0 or y - 1 < 0 or grid[x - 1, y - 1] == 1:
+        valid_actions.remove(Action.SW)
+    if x - 1 < 0 or y + 1 > m or grid[x - 1, y + 1] == 1:
+        valid_actions.remove(Action.NW)
+    if x + 1 > n or y - 1 < 0 or grid[x + 1, y - 1] == 1:
+        valid_actions.remove(Action.SE)
+    if x + 1 > n or y + 1 > m or grid[x + 1, y + 1] == 1:
+        valid_actions.remove(Action.NE)
+    return valid_actions
+\end{lstlisting}
+
+\subsection{Path Pruning}
+Due to an insufficiency found in the collinearity algorithm, I implemented both Ray Tracing and Collinearity.\\
+
+\noindent The algorithm can be stated qualitatively as follows, if for 3 points:
+\begin{enumerate}
+\item All are collinear down to a $\epsilon$ value of error then remove the center point
+\item The second is in one of the cells laid out by the Bresenham algorithm between points 1 and 3, remove the center point
+\item No cells in the Bresenham ray tracing algorithm from 1 to 3 have an obstacle in them, remove center point.
+\end{enumerate}
+
+From within the $planning\_utils.py$ file
+\begin{lstlisting}[language=Python]
+def point(p):
+    return np.array([p[0], p[1], 1.])
+
+
+def collinearity_check(p1, p2, p3, epsilon=1e-1):
+
+    mat = np.vstack((point(p1), point(p2), point(p3)))
+    # m = np.concatenate((p1, p2, p3), 0)
+    det = np.linalg.det(mat)
+    return abs(det) < epsilon
+
+
+def prune_path_grid(path, grid):
+
+    pruned_path = [p for p in path]
+
+    # Add points as rows in a matrix
+    i = 0
+    while i < len(pruned_path) - 2:
+        p1 = pruned_path[i]
+        p2 = pruned_path[i + 1]
+        p3 = pruned_path[i + 2]
+
+        # If the 3 points are in a line remove
+        # the 2nd point.
+        # The 3rd point now becomes the 2nd point
+        # and the check is redone with a new third point
+        # on the next iteration.
+        cells = list(bresenham(p1[0], p1[1], p3[0], p3[1]))
+
+        # check if there is a viable path between 1 and 3
+        no_obstacles = True
+        for c in cells:
+            x = c[0]
+            y = c[1]
+            if grid[x, y] == 1:
+                no_obstacles = False
+
+        if collinearity_check(p1, p2, p3):
+            # Something subtle here but we can mutate
+            # `pruned_path` freely because the length
+            # of the list is checked on every iteration.
+            pruned_path.remove(pruned_path[i + 1])
+        # eliminate paths where cells are slightly outside of the path
+        elif p2 in cells:
+            pruned_path.remove(pruned_path[i + 1])
+
+        elif no_obstacles is True:
+            pruned_path.remove(pruned_path[i + 1])
+
+        # if no pruning, go to next set
+        else:
+            i += 1
+
+    return pruned_path
+
+\end{lstlisting}
+
+\section{Future Improvements}
+The goal of this section is to outline for my own benefit possible future improvements to this Motion Planning Simulation. Due to time constraints I will not seek to implement these features but instead lay my thoughts on paper to consolidate them and assist any future work I may do on this project.
+
+\subsection{Graph Based Search}
+As was taught in the Udacity lectures and excercises Graph based searchs can be performed quicker once a graph has been constructed.\\
+
+\noindent In order to construct a graph I would start with my 2D grid generated from the 2.5D map given in $colliders.csv$.\\
+
+\noindent Using medial axis and voronoi algorithms this could be implemented.\\
+
+\noindent In order to implement this a new definition for costs will need to be made. This can be done by defining a general euclidean cost function based on the total distance traveled.\\
+
+$$ Cost = \sqrt{ \Delta x ^2 + \Delta y ^2}$$
+\subsection{3D A star Search}
+Steps:
+\begin{enumerate}
+\item Define new possible actions (8 + 8 + 2 new possible actions)
+\item If moving up or down generate a new grid
+\end{enumerate}
+
+\subsection{Misc}
+\begin{itemize}
+\item Check if goal is in a building
+\item Check if goal is in map
+\item Ability to Queue goals
+\item Enter goals from command line
+\end{itemize}
+
+\newpage
+\begin{appendices}
+\section{planning utils.py}
+\begin{lstlisting}[language=Python]
+from enum import Enum
+from queue import PriorityQueue
+import numpy as np
+from bresenham import bresenham
+
+
+
+
+def create_grid(data, drone_altitude, safety_distance):
+    """
+    Returns a grid representation of a 2D configuration space
+    based on given obstacle data, drone altitude and safety distance
+    arguments.
+    """
+
+    # minimum and maximum north coordinates
+    north_min = np.floor(np.min(data[:, 0] - data[:, 3]))
+    north_max = np.ceil(np.max(data[:, 0] + data[:, 3]))
+
+    # minimum and maximum east coordinates
+    east_min = np.floor(np.min(data[:, 1] - data[:, 4]))
+    east_max = np.ceil(np.max(data[:, 1] + data[:, 4]))
+
+    # given the minimum and maximum coordinates we can
+    # calculate the size of the grid.
+    north_size = int(np.ceil(north_max - north_min))
+    east_size = int(np.ceil(east_max - east_min))
+
+    # Initialize an empty grid
+    grid = np.zeros((north_size, east_size))
+
+    # Populate the grid with obstacles
+    for i in range(data.shape[0]):
+        north, east, alt, d_north, d_east, d_alt = data[i, :]
+        if alt + d_alt + safety_distance > drone_altitude:
+            obstacle = [
+                int(np.clip(north - d_north - safety_distance - north_min, 0, north_size - 1)),
+                int(np.clip(north + d_north + safety_distance - north_min, 0, north_size - 1)),
+                int(np.clip(east - d_east - safety_distance - east_min, 0, east_size - 1)),
+                int(np.clip(east + d_east + safety_distance - east_min, 0, east_size - 1)),
+            ]
+            grid[obstacle[0]:obstacle[1] + 1, obstacle[2]:obstacle[3] + 1] = 1
+
+    return grid, int(north_min), int(east_min)
+
+
+# Assume all actions cost the same.
+class Action(Enum):
+    """
+    An action is represented by a 3 element tuple.
+
+    The first 2 values are the delta of the action relative
+    to the current grid position. The third and final value
+    is the cost of performing the action.
+    """
+
+    WEST = (0, -1, 1)
+    EAST = (0, 1, 1)
+    NORTH = (-1, 0, 1)
+    SOUTH = (1, 0, 1)
+    NE = (1, 1, 2**(.5))
+    SE = (1, -1, 2**(.5))
+    NW = (-1, 1, 2**(.5))
+    SW = (-1, -1, 2**(.5))
+
+    @property
+    def cost(self):
+        return self.value[2]
+
+    @property
+    def delta(self):
+        return (self.value[0], self.value[1])
+
+
+def valid_actions(grid, current_node):
+    """
+    Returns a list of valid actions given a grid and current node.
+    """
+    valid_actions = list(Action)
+    n, m = grid.shape[0] - 1, grid.shape[1] - 1
+    x, y = current_node
+
+    # check if the node is off the grid or
+    # it's an obstacle
+
+    if x - 1 < 0 or grid[x - 1, y] == 1:
+        valid_actions.remove(Action.NORTH)
+    if x + 1 > n or grid[x + 1, y] == 1:
+        valid_actions.remove(Action.SOUTH)
+    if y - 1 < 0 or grid[x, y - 1] == 1:
+        valid_actions.remove(Action.WEST)
+    if y + 1 > m or grid[x, y + 1] == 1:
+        valid_actions.remove(Action.EAST)
+    if x - 1 < 0 or y - 1 < 0 or grid[x - 1, y - 1] == 1:
+        valid_actions.remove(Action.SW)
+    if x - 1 < 0 or y + 1 > m or grid[x - 1, y + 1] == 1:
+        valid_actions.remove(Action.NW)
+    if x + 1 > n or y - 1 < 0 or grid[x + 1, y - 1] == 1:
+        valid_actions.remove(Action.SE)
+    if x + 1 > n or y + 1 > m or grid[x + 1, y + 1] == 1:
+        valid_actions.remove(Action.NE)
+    return valid_actions
+
+
+def a_star(grid, h, start, goal):
+    print()
+    print('Start')
+    print(start)
+    print('Goal')
+    print(goal)
+    print()
+    path = []
+    path_cost = 0
+    queue = PriorityQueue()
+    queue.put((0, start))
+    visited = set(start)
+
+    branch = {}
+    found = False
+
+    while not queue.empty():
+        item = queue.get()
+        current_node = item[1]
+        if current_node == start:
+            current_cost = 0.0
+        else:
+            current_cost = branch[current_node][0]
+
+        if current_node == goal:
+            print('Found a path.')
+            found = True
+            break
+        else:
+            for action in valid_actions(grid, current_node):
+                # get the tuple representation
+                da = action.delta
+                next_node = (current_node[0] + da[0], current_node[1] + da[1])
+                branch_cost = current_cost + action.cost
+                queue_cost = branch_cost + h(next_node, goal)
+
+                if next_node not in visited:
+                    visited.add(next_node)
+                    branch[next_node] = (branch_cost, current_node, action)
+                    queue.put((queue_cost, next_node))
+
+    if found:
+        # retrace steps
+        n = goal
+        path_cost = branch[n][0]
+        path.append(goal)
+        while branch[n][1] != start:
+            path.append(branch[n][1])
+            n = branch[n][1]
+        path.append(branch[n][1])
+    else:
+        print('**********************')
+        print('Failed to find a path!')
+        print('**********************')
+    return path[::-1], path_cost
+
+
+def heuristic(position, goal_position):
+    return np.linalg.norm(np.array(position) - np.array(goal_position))
+
+
+def point(p):
+    return np.array([p[0], p[1], 1.])
+
+
+def collinearity_check(p1, p2, p3, epsilon=1e-1):
+
+    mat = np.vstack((point(p1), point(p2), point(p3)))
+    # m = np.concatenate((p1, p2, p3), 0)
+    det = np.linalg.det(mat)
+    return abs(det) < epsilon
+
+
+def prune_path_grid(path, grid):
+
+    pruned_path = [p for p in path]
+
+    # Add points as rows in a matrix
+    i = 0
+    while i < len(pruned_path) - 2:
+        p1 = pruned_path[i]
+        p2 = pruned_path[i + 1]
+        p3 = pruned_path[i + 2]
+
+        # If the 3 points are in a line remove
+        # the 2nd point.
+        # The 3rd point now becomes the 2nd point
+        # and the check is redone with a new third point
+        # on the next iteration.
+        cells = list(bresenham(p1[0], p1[1], p3[0], p3[1]))
+
+        # check if there is a viable path between 1 and 3
+        no_obstacles = True
+        for c in cells:
+            x = c[0]
+            y = c[1]
+            if grid[x, y] == 1:
+                no_obstacles = False
+
+        if collinearity_check(p1, p2, p3):
+            # Something subtle here but we can mutate
+            # `pruned_path` freely because the length
+            # of the list is checked on every iteration.
+            pruned_path.remove(pruned_path[i + 1])
+        # eliminate paths where cells are slightly outside of the path
+        elif p2 in cells:
+            pruned_path.remove(pruned_path[i + 1])
+
+        elif no_obstacles is True:
+            pruned_path.remove(pruned_path[i + 1])
+
+        # if no pruning, go to next set
+        else:
+            i += 1
+
+    return pruned_path
+
+\end{lstlisting}
+
+\newpage
+\section{motion planning.py}
+\begin{lstlisting}[language=Python]
+import argparse
+import time
+import msgpack
+import csv
+from enum import Enum, auto
+
+import numpy as np
+
+from planning_utils import a_star, heuristic, create_grid, prune_path_grid
+from udacidrone import Drone
+from udacidrone.connection import MavlinkConnection
+from udacidrone.messaging import MsgID
+from udacidrone.frame_utils import global_to_local
+
+
+class States(Enum):
+    MANUAL = auto()
+    ARMING = auto()
+    TAKEOFF = auto()
+    WAYPOINT = auto()
+    LANDING = auto()
+    DISARMING = auto()
+    PLANNING = auto()
+
+
+class MotionPlanning(Drone):
+
+    def __init__(self, connection):
+        super().__init__(connection)
+
+        self.target_position = np.array([0.0, 0.0, 0.0])
+        self.waypoints = []
+        self.in_mission = True
+        self.check_state = {}
+
+        # initial state
+        self.flight_state = States.MANUAL
+
+        # register all your callbacks here
+        self.register_callback(MsgID.LOCAL_POSITION, self.local_position_callback)
+        self.register_callback(MsgID.LOCAL_VELOCITY, self.velocity_callback)
+        self.register_callback(MsgID.STATE, self.state_callback)
+
+    def local_position_callback(self):
+        if self.flight_state == States.TAKEOFF:
+            if -1.0 * self.local_position[2] > 0.95 * self.target_position[2]:
+                self.waypoint_transition()
+        elif self.flight_state == States.WAYPOINT:
+            if np.linalg.norm(self.target_position[0:2] - self.local_position[0:2]) < 1.0:
+                if len(self.waypoints) > 0:
+                    self.waypoint_transition()
+                else:
+                    if np.linalg.norm(self.local_velocity[0:2]) < 1.0:
+                        self.landing_transition()
+
+    def velocity_callback(self):
+        if self.flight_state == States.LANDING:
+            if self.global_position[2] - self.global_home[2] < 0.1:
+                if abs(self.local_position[2]) < 0.01:
+                    self.disarming_transition()
+
+    def state_callback(self):
+        if self.in_mission:
+            if self.flight_state == States.MANUAL:
+                self.arming_transition()
+            elif self.flight_state == States.ARMING:
+                if self.armed:
+                    self.plan_path()
+            elif self.flight_state == States.PLANNING:
+                self.takeoff_transition()
+            elif self.flight_state == States.DISARMING:
+                if ~self.armed & ~self.guided:
+                    self.manual_transition()
+
+    def arming_transition(self):
+        self.flight_state = States.ARMING
+        print("arming transition")
+        self.arm()
+        self.take_control()
+
+    def takeoff_transition(self):
+        self.flight_state = States.TAKEOFF
+        print("takeoff transition")
+        self.takeoff(self.target_position[2])
+
+    def waypoint_transition(self):
+        self.flight_state = States.WAYPOINT
+        print("waypoint transition")
+        self.target_position = self.waypoints.pop(0)
+        print('target position', self.target_position)
+        self.cmd_position(self.target_position[0], self.target_position[1], self.target_position[2], self.target_position[3])
+
+    def landing_transition(self):
+        self.flight_state = States.LANDING
+        print("landing transition")
+        self.land()
+
+    def disarming_transition(self):
+        self.flight_state = States.DISARMING
+        print("disarm transition")
+        self.disarm()
+        self.release_control()
+
+    def manual_transition(self):
+        self.flight_state = States.MANUAL
+        print("manual transition")
+        self.stop()
+        self.in_mission = False
+
+    def send_waypoints(self):
+        print("Sending waypoints to simulator ...")
+        data = msgpack.dumps(self.waypoints)
+        self.connection._master.write(data)
+
+    def read_in(self):
+        # read lat0, lon0 from colliders into floating point values
+        # read in whole file and take out first line as "row1"
+        csvfile = open('colliders.csv', newline='')
+        colliders = csv.reader(csvfile, delimiter=',')
+        row1 = next(colliders)
+
+        # parse strings to get numbers
+        lat_0 = float(row1[0][5:])
+        lon_0 = float(row1[1][6:])
+        # set home position to (lon0, lat0, 0)
+        self.set_home_position(lon_0, lat_0, 0)
+
+        # Read in obstacle map
+        self.data = np.loadtxt('colliders.csv', delimiter=',',
+                               dtype='Float64', skiprows=2)
+
+    def plan_path_grid(self, TARGET_ALTITUDE, SAFETY_DISTANCE):
+        self.read_in()
+
+        # convert to current local position using global_to_local()
+        local_pos = global_to_local(self.global_position, self.global_home)
+
+        print('global home {0}, position {1}, local position {2}'
+              .format(self.global_home,
+                      self.global_position,
+                      self.local_position))
+
+        # Make grid given a particular altitude and margin around obstacles
+        grid, north_offset, east_offset = create_grid(self.data, TARGET_ALTITUDE, SAFETY_DISTANCE)
+        print("North offset = {0}, east offset = {1}".format(north_offset, east_offset))
+        # Define starting point on the grid (this is just grid center)
+        grid_start = (-north_offset, -east_offset)
+
+        # convert start position to current position rather than map center
+        grid_start =  (int(local_pos[0]) + grid_start[0], int(local_pos[1]) + grid_start[1])
+
+        # Set goal as lat lon and convert to local coordinates (from bottom left)
+        grid_goal_global = (-122.397450,37.79380,0)
+        grid_goal = global_to_local(grid_goal_global, self.global_home)
+        grid_goal = (int(grid_goal[0]) - north_offset,  int(grid_goal[1]) - east_offset)
+
+
+        # Run A* and prune path
+        path, _ = a_star(grid, heuristic, grid_start, grid_goal)
+        path = prune_path_grid(path, grid)
+
+        # Convert path to waypoints and send to simulator
+        waypoints = [[p[0] + north_offset, p[1] + east_offset, TARGET_ALTITUDE, 0] for p in path]
+        self.waypoints = waypoints
+
+    def plan_path(self):
+        self.flight_state = States.PLANNING
+        print("Searching for a path ...")
+        TARGET_ALTITUDE = 5
+        SAFETY_DISTANCE = 5
+
+        self.target_position[2] = TARGET_ALTITUDE
+
+        self.plan_path_grid(TARGET_ALTITUDE, SAFETY_DISTANCE)
+        #self.plan_path_graph(TARGET_ALTITUDE, SAFETY_DISTANCE)
+        self.send_waypoints()
+
+    def start(self):
+        self.start_log("Logs", "NavLog.txt")
+
+        print("starting connection")
+        self.connection.start()
+
+        # Only required if they do threaded
+        # while self.in_mission:
+        #    pass
+
+        self.stop_log()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', type=int, default=5760, help='Port number')
+    parser.add_argument('--host', type=str, default='127.0.0.1', help="host address, i.e. '127.0.0.1'")
+    args = parser.parse_args()
+
+    conn = MavlinkConnection('tcp:{0}:{1}'.format(args.host, args.port), timeout=60)
+    drone = MotionPlanning(conn)
+    time.sleep(1)
+
+    drone.start()
+
+
+
+    #idea: check if x,y is on top of building, then change flight altitde.
+    # create a graph and a star
+    # 3d grid a star
+    # 3d graph?
+    #
+
+
+\end{lstlisting}
+\newpage
+\section{Summary of Section}
+
+Path Planning has 3 phases:
+\begin{enumerate}
+\itemsep0em
+\item Build Map
+\item Find Path(s)
+\item Prune waypoints
+\end{enumerate}
+
+
+\noindent  \textbf{Building a Map}\\
+\noindent The udacity course goes through several ways of doing this. The most simple to understand is a 2D grid in which free space and obstacles are abstracted based on which are safe states.\\
+
+\noindent More complex representations are the following:
+\begin{itemize}
+\itemsep0em
+\item Dimensions
+	\begin{itemize}
+	\itemsep0em
+	\item 2D
+	\item 3D
+	\item 2.5D : obstacles are represented with a height above which exists free space
+	\end{itemize}
+\item Structure
+	\begin{itemize}
+	\itemsep0em
+	\item Grid (varied mesh size)
+	\item Graph (Median Axis Method)
+	\item Network (Voronoi Method)
+	\end{itemize}
+\end{itemize}
+
+\noindent \textbf{Finding a path}\\
+\noindent Once a map has been constructed and start/goal states have been defined, it is time to plot a course through the map to the goal state while avoiding all obstacles / collisions. \\
+
+\noindent The classic dichotomy is between breadth first and depth first search. 
+
+\textit{Breadth first search}
+\begin{itemize}
+\itemsep0em
+\item Construct a list of partial plans
+\item Always add onto the shortest list
+\item Never visit the same grid space twice
+\item Once goal reached, shortest path found.
+\end{itemize}
+
+\textit{Depth first search}
+\begin{itemize}
+\itemsep0em
+\item Expand last “successful” action… whatever that means. 
+\item Not used for this application
+\end{itemize}
+
+\noindent Due to the time and computational intensity of breadth first search, a hybrid approach is used which uses our knowledge of the location of the goal state to improve the time and accuracy. This is called A-star (A*)
+
+
+\textit{A-star search}
+\begin{enumerate}
+\itemsep0em
+\item Define a heuristic for each point based on its location relative to the GOAL
+\item “Manhattan” distance. $ |x1-x2| + |y1-y2|$
+\item Euclidean distance.    $ \sqrt{ (x1-x2)^2 + (y1-y2)^2 }$
+\item Define costs of moving between each possible waypoint (simple for a grid)
+\item Calculate cost of moving to all possible adjacent locations from current location
+\item Pick best choice based on the cost of getting to that location PLUS the heuristic cost to the finish
+\item Repeat until reached goal
+\end{enumerate}
+
+
+
+\noindent \textbf{Prune Path}\\
+\noindent In order to reduce the number of waypoints in the path and simplify the navigation, redundant waypoints should be removed. Waypoints are redundant if they fall in a straight line or if they are between two or more other waypoints. \\
+
+\noindent Collinearity can be tested with the determinant of the matrix made up of 3 adjacent points. \\
+
+\noindent Bresenham tests if a point falls on the line between two other points. This is an implementation of ray tracing algorithms.
+
+\end{appendices}
+\end{document}
