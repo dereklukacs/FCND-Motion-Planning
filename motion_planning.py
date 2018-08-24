@@ -1,11 +1,12 @@
 import argparse
 import time
 import msgpack
+import csv
 from enum import Enum, auto
 
 import numpy as np
 
-from planning_utils import a_star, heuristic, create_grid
+from planning_utils import a_star, heuristic, create_grid, prune_path_grid
 from udacidrone import Drone
 from udacidrone.connection import MavlinkConnection
 from udacidrone.messaging import MsgID
@@ -111,6 +112,57 @@ class MotionPlanning(Drone):
         data = msgpack.dumps(self.waypoints)
         self.connection._master.write(data)
 
+    def read_in(self):
+        # read lat0, lon0 from colliders into floating point values
+        # read in whole file and take out first line as "row1"
+        csvfile = open('colliders.csv', newline='')
+        colliders = csv.reader(csvfile, delimiter=',')
+        row1 = next(colliders)
+
+        # parse strings to get numbers
+        lat_0 = float(row1[0][5:])
+        lon_0 = float(row1[1][6:])
+        # set home position to (lon0, lat0, 0)
+        self.set_home_position(lon_0, lat_0, 0)
+
+        # Read in obstacle map
+        self.data = np.loadtxt('colliders.csv', delimiter=',',
+                               dtype='Float64', skiprows=2)
+
+    def plan_path_grid(self, TARGET_ALTITUDE, SAFETY_DISTANCE):
+        self.read_in()
+
+        # convert to current local position using global_to_local()
+        local_pos = global_to_local(self.global_position, self.global_home)
+
+        print('global home {0}, position {1}, local position {2}'
+              .format(self.global_home,
+                      self.global_position,
+                      self.local_position))
+
+        # Make grid given a particular altitude and margin around obstacles
+        grid, north_offset, east_offset = create_grid(self.data, TARGET_ALTITUDE, SAFETY_DISTANCE)
+        print("North offset = {0}, east offset = {1}".format(north_offset, east_offset))
+        # Define starting point on the grid (this is just grid center)
+        grid_start = (-north_offset, -east_offset)
+
+        # convert start position to current position rather than map center
+        grid_start =  (int(local_pos[0]) + grid_start[0], int(local_pos[1]) + grid_start[1])
+
+        # Set goal as lat lon and convert to local coordinates (from bottom left)
+        grid_goal_global = (-122.397450,37.79380,0)
+        grid_goal = global_to_local(grid_goal_global, self.global_home)
+        grid_goal = (int(grid_goal[0]) - north_offset,  int(grid_goal[1]) - east_offset)
+
+
+        # Run A* and prune path
+        path, _ = a_star(grid, heuristic, grid_start, grid_goal)
+        path = prune_path_grid(path, grid)
+
+        # Convert path to waypoints and send to simulator
+        waypoints = [[p[0] + north_offset, p[1] + east_offset, TARGET_ALTITUDE, 0] for p in path]
+        self.waypoints = waypoints
+
     def plan_path(self):
         self.flight_state = States.PLANNING
         print("Searching for a path ...")
@@ -119,43 +171,8 @@ class MotionPlanning(Drone):
 
         self.target_position[2] = TARGET_ALTITUDE
 
-        # TODO: read lat0, lon0 from colliders into floating point values
-        
-        # TODO: set home position to (lon0, lat0, 0)
-
-        # TODO: retrieve current global position
- 
-        # TODO: convert to current local position using global_to_local()
-        
-        print('global home {0}, position {1}, local position {2}'.format(self.global_home, self.global_position,
-                                                                         self.local_position))
-        # Read in obstacle map
-        data = np.loadtxt('colliders.csv', delimiter=',', dtype='Float64', skiprows=2)
-        
-        # Define a grid for a particular altitude and safety margin around obstacles
-        grid, north_offset, east_offset = create_grid(data, TARGET_ALTITUDE, SAFETY_DISTANCE)
-        print("North offset = {0}, east offset = {1}".format(north_offset, east_offset))
-        # Define starting point on the grid (this is just grid center)
-        grid_start = (-north_offset, -east_offset)
-        # TODO: convert start position to current position rather than map center
-        
-        # Set goal as some arbitrary position on the grid
-        grid_goal = (-north_offset + 10, -east_offset + 10)
-        # TODO: adapt to set goal as latitude / longitude position and convert
-
-        # Run A* to find a path from start to goal
-        # TODO: add diagonal motions with a cost of sqrt(2) to your A* implementation
-        # or move to a different search space such as a graph (not done here)
-        print('Local Start and Goal: ', grid_start, grid_goal)
-        path, _ = a_star(grid, heuristic, grid_start, grid_goal)
-        # TODO: prune path to minimize number of waypoints
-        # TODO (if you're feeling ambitious): Try a different approach altogether!
-
-        # Convert path to waypoints
-        waypoints = [[p[0] + north_offset, p[1] + east_offset, TARGET_ALTITUDE, 0] for p in path]
-        # Set self.waypoints
-        self.waypoints = waypoints
-        # TODO: send waypoints to sim (this is just for visualization of waypoints)
+        self.plan_path_grid(TARGET_ALTITUDE, SAFETY_DISTANCE)
+        #self.plan_path_graph(TARGET_ALTITUDE, SAFETY_DISTANCE)
         self.send_waypoints()
 
     def start(self):
@@ -182,3 +199,7 @@ if __name__ == "__main__":
     time.sleep(1)
 
     drone.start()
+
+
+
+

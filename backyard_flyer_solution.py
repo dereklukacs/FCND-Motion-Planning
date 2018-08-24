@@ -88,7 +88,7 @@ class BackyardFlyer(Drone):
         # self.global_home = np.copy(self.global_position)  # can't write to this variable!
         target_altitude = 3.0
         self.target_position[2] = target_altitude
-        self.takeoff(target_altitude)
+        self.takeoff(obj.data.target_altitude)
         self.flight_state = States.TAKEOFF
 
     def waypoint_transition(self):

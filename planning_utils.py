@@ -1,6 +1,9 @@
 from enum import Enum
 from queue import PriorityQueue
 import numpy as np
+from bresenham import bresenham
+
+
 
 
 def create_grid(data, drone_altitude, safety_distance):
@@ -31,12 +34,12 @@ def create_grid(data, drone_altitude, safety_distance):
         north, east, alt, d_north, d_east, d_alt = data[i, :]
         if alt + d_alt + safety_distance > drone_altitude:
             obstacle = [
-                int(np.clip(north - d_north - safety_distance - north_min, 0, north_size-1)),
-                int(np.clip(north + d_north + safety_distance - north_min, 0, north_size-1)),
-                int(np.clip(east - d_east - safety_distance - east_min, 0, east_size-1)),
-                int(np.clip(east + d_east + safety_distance - east_min, 0, east_size-1)),
+                int(np.clip(north - d_north - safety_distance - north_min, 0, north_size - 1)),
+                int(np.clip(north + d_north + safety_distance - north_min, 0, north_size - 1)),
+                int(np.clip(east - d_east - safety_distance - east_min, 0, east_size - 1)),
+                int(np.clip(east + d_east + safety_distance - east_min, 0, east_size - 1)),
             ]
-            grid[obstacle[0]:obstacle[1]+1, obstacle[2]:obstacle[3]+1] = 1
+            grid[obstacle[0]:obstacle[1] + 1, obstacle[2]:obstacle[3] + 1] = 1
 
     return grid, int(north_min), int(east_min)
 
@@ -55,6 +58,10 @@ class Action(Enum):
     EAST = (0, 1, 1)
     NORTH = (-1, 0, 1)
     SOUTH = (1, 0, 1)
+    NE = (1, 1, 2**(.5))
+    SE = (1, -1, 2**(.5))
+    NW = (-1, 1, 2**(.5))
+    SW = (-1, -1, 2**(.5))
 
     @property
     def cost(self):
@@ -84,12 +91,24 @@ def valid_actions(grid, current_node):
         valid_actions.remove(Action.WEST)
     if y + 1 > m or grid[x, y + 1] == 1:
         valid_actions.remove(Action.EAST)
-
+    if x - 1 < 0 or y - 1 < 0 or grid[x - 1, y - 1] == 1:
+        valid_actions.remove(Action.SW)
+    if x - 1 < 0 or y + 1 > m or grid[x - 1, y + 1] == 1:
+        valid_actions.remove(Action.NW)
+    if x + 1 > n or y - 1 < 0 or grid[x + 1, y - 1] == 1:
+        valid_actions.remove(Action.SE)
+    if x + 1 > n or y + 1 > m or grid[x + 1, y + 1] == 1:
+        valid_actions.remove(Action.NE)
     return valid_actions
 
 
 def a_star(grid, h, start, goal):
-
+    print()
+    print('Start')
+    print(start)
+    print('Goal')
+    print(goal)
+    print()
     path = []
     path_cost = 0
     queue = PriorityQueue()
@@ -98,16 +117,16 @@ def a_star(grid, h, start, goal):
 
     branch = {}
     found = False
-    
+
     while not queue.empty():
         item = queue.get()
         current_node = item[1]
         if current_node == start:
             current_cost = 0.0
-        else:              
+        else:
             current_cost = branch[current_node][0]
-            
-        if current_node == goal:        
+
+        if current_node == goal:
             print('Found a path.')
             found = True
             break
@@ -118,12 +137,12 @@ def a_star(grid, h, start, goal):
                 next_node = (current_node[0] + da[0], current_node[1] + da[1])
                 branch_cost = current_cost + action.cost
                 queue_cost = branch_cost + h(next_node, goal)
-                
-                if next_node not in visited:                
-                    visited.add(next_node)               
+
+                if next_node not in visited:
+                    visited.add(next_node)
                     branch[next_node] = (branch_cost, current_node, action)
                     queue.put((queue_cost, next_node))
-             
+
     if found:
         # retrace steps
         n = goal
@@ -136,11 +155,66 @@ def a_star(grid, h, start, goal):
     else:
         print('**********************')
         print('Failed to find a path!')
-        print('**********************') 
+        print('**********************')
     return path[::-1], path_cost
-
 
 
 def heuristic(position, goal_position):
     return np.linalg.norm(np.array(position) - np.array(goal_position))
 
+
+def point(p):
+    return np.array([p[0], p[1], 1.])
+
+
+def collinearity_check(p1, p2, p3, epsilon=1e-1):
+
+    mat = np.vstack((point(p1), point(p2), point(p3)))
+    # m = np.concatenate((p1, p2, p3), 0)
+    det = np.linalg.det(mat)
+    return abs(det) < epsilon
+
+
+def prune_path_grid(path, grid):
+
+    pruned_path = [p for p in path]
+
+    # Add points as rows in a matrix
+    i = 0
+    while i < len(pruned_path) - 2:
+        p1 = pruned_path[i]
+        p2 = pruned_path[i + 1]
+        p3 = pruned_path[i + 2]
+
+        # If the 3 points are in a line remove
+        # the 2nd point.
+        # The 3rd point now becomes the 2nd point
+        # and the check is redone with a new third point
+        # on the next iteration.
+        cells = list(bresenham(p1[0], p1[1], p3[0], p3[1]))
+
+        # check if there is a viable path between 1 and 3
+        no_obstacles = True
+        for c in cells:
+            x = c[0]
+            y = c[1]
+            if grid[x, y] == 1:
+                no_obstacles = False
+
+        if collinearity_check(p1, p2, p3):
+            # Something subtle here but we can mutate
+            # `pruned_path` freely because the length
+            # of the list is checked on every iteration.
+            pruned_path.remove(pruned_path[i + 1])
+        # eliminate paths where cells are slightly outside of the path
+        elif p2 in cells:
+            pruned_path.remove(pruned_path[i + 1])
+
+        elif no_obstacles is True:
+            pruned_path.remove(pruned_path[i + 1])
+
+        # if no pruning, go to next set
+        else:
+            i += 1
+
+    return pruned_path
