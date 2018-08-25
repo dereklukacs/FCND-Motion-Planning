@@ -67,7 +67,23 @@ The algorithm can be stated qualitatively as follows, if for 3 points:
 2. The second is in one of the cells laid out by the Bresenham algorithm between points 1 and 3, remove the center point
 3. No cells in the Bresenham ray tracing algorithm from 1 to 3 have an obstacle in them, remove center point.
 
-This process is called twice to ensure all points that can be pruned get pruned. 
+To demonstrate the importance of path pruning, the following simulation does not use any path pruning. The quad actually crashes because it is not stable enough. With all of those points.
+<img src="https://github.com/dereklukacs/FCND-Motion-Planning/blob/master/images/no_pruning.gif?raw=true"
+     alt="Simulation with no path pruning being used, quad crashes"/>
 
+Now, using path pruning the path is simple for the quadrotor to follow and it successfully makes it to the finish. 
+<img src="https://github.com/dereklukacs/FCND-Motion-Planning/blob/master/images/with_pruning.gif?raw=true"
+     alt="Simulation with path pruning, quad completes goal" />
 
 ## Conclusion and Future Expansion ##
+A quadrotor is able to be simulated and find its way to any valid location on the map using an A* search algorithm. The path is then succesfully simplified with path pruning methods to reduce excess waypoints. 
+
+
+#### Graph Based Search ####
+An expansion to this program could be to use graph based search which can be performed quicker once a graph has been constructed.
+
+In order to construct a graph I would start with my 2D grid generated from the 2.5D map given in colliders.csv.
+Using medial axis and voronoi algorithms this could be implemented.
+
+In order to implement this a new definition for costs will need to be made. This can be done by defining a general euclidean cost function based on the total distance traveled.
+
