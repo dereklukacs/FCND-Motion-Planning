@@ -68,10 +68,14 @@ The algorithm can be stated qualitatively as follows, if for 3 points:
 3. No cells in the Bresenham ray tracing algorithm from 1 to 3 have an obstacle in them, remove center point.
 
 To demonstrate the importance of path pruning, the following simulation does not use any path pruning. The quad actually crashes because it is not stable enough. With all of those points.
+
+
 <img src="https://github.com/dereklukacs/FCND-Motion-Planning/blob/master/images/no_pruning.gif?raw=true"
      alt="Simulation with no path pruning being used, quad crashes"/>
 
 Now, using path pruning the path is simple for the quadrotor to follow and it successfully makes it to the finish. 
+
+
 <img src="https://github.com/dereklukacs/FCND-Motion-Planning/blob/master/images/with_pruning.gif?raw=true"
      alt="Simulation with path pruning, quad completes goal" />
 
